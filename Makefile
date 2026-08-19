@@ -1,16 +1,15 @@
 CXX := /usr/bin/c++
 
-INC_DIR := /home/arthur/include
-LIB_DIR := /home/arthur/lib
+SDSL_DIR := sdsl-lite
 
 CXXFLAGS := -std=c++17 -Wall -Wextra -O3 -DNDEBUG \
             -ffast-math -funroll-loops -msse4.2 -march=native \
             -DHAVE_CXA_DEMANGLE \
-            -Iinclude -I$(INC_DIR)
+            -Iinclude -I$(SDSL_DIR)/include
 
-LDFLAGS := -L$(LIB_DIR)
+LDFLAGS :=
 
-LDLIBS := -lsdsl -ldivsufsort -ldivsufsort64
+LDLIBS :=
 
 SOURCES := $(wildcard src/*.cpp)
 OBJECTS := $(SOURCES:.cpp=.o)
@@ -28,8 +27,11 @@ src/%.o: src/%.cpp
 run: $(TARGET)
 	./$(TARGET)
 
+test:
+	bash tests/check_sdsl_v3_makefile.sh
+
 clean:
 	rm -f $(OBJECTS) $(TARGET)
 	rm -rf *.dSYM
 
-.PHONY: all run clean
+.PHONY: all run test clean
