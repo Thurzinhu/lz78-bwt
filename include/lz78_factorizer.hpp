@@ -22,7 +22,7 @@ private:
     std::vector<Factor> factors;
 
     template <typename Text, typename Emit>
-    void factorize_reversed_text(const Text& text, Emit emit) {
+    void factorize_text(const Text& text, Emit emit) {
         uint64_t k = 0;
         uint64_t next_id = 1;
         uint64_t processed = 0;
@@ -77,10 +77,9 @@ public:
             throw std::invalid_argument("input containing '$' is not supported");
         }
 
-        std::string S_rev = get_reversed(S);
-        index.build(S_rev);
+        index.build(S);
         factors.clear();
-        factorize_reversed_text(S_rev, [this](const Factor& factor) {
+        factorize_text(S, [this](const Factor& factor) {
             factors.push_back(factor);
         });
     }
@@ -99,7 +98,7 @@ public:
         FactorWriter writer(output_factors_path);
 
         log_lz78_progress("factorize begin");
-        factorize_reversed_text(text, [&writer](const Factor& factor) {
+        factorize_text(text, [&writer](const Factor& factor) {
             writer.write(factor);
         });
         log_lz78_progress("factorize end");

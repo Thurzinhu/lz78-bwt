@@ -48,7 +48,7 @@ int encode(
         return 0;
     }
 
-    throw std::invalid_argument("dictionary must be 'linear' or 'segtree'");
+    throw std::invalid_argument("dictionary must be 'linear', 'segtree', or 'hash'");
 }
 
 } // namespace
