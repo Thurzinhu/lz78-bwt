@@ -5,6 +5,7 @@
 #include <progress.hpp>
 
 #include <sdsl/construct_config.hpp>
+#include <sdsl/io.hpp>
 #include <sdsl/suffix_arrays.hpp>
 
 #include <chrono>
@@ -69,8 +70,9 @@ public:
         );
 
         sdsl::cache_config config(
-            true,
-            std::filesystem::temp_directory_path().string(),
+            false,
+            //std::filesystem::temp_directory_path().string(),
+            "/home/arthur/TCC/sdsl-lz78/output/sdsl-structures",
             cache_id
         );
 
@@ -95,5 +97,9 @@ public:
 
     uint64_t size() const override {
         return csa.size();
+    }
+
+    uint64_t size_in_bytes() const {
+        return sdsl::size_in_bytes(csa);
     }
 };

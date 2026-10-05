@@ -3,6 +3,7 @@
 #include <linear_dictionary.hpp>
 #include <lz78_decoder.hpp>
 #include <lz78_factorizer.hpp>
+#include <progress.hpp>
 #include <seg_tree_dictionary.hpp>
 #include <hash_dictionary.hpp>
 
@@ -19,6 +20,17 @@ void print_usage(const char* program) {
         << "  " << program << " decode <input_factors_file> <output_text_file>\n";
 }
 
+void print_memory_report(const FMIndex& index) {
+    const uint64_t fm_index_bytes = index.size_in_bytes();
+    const double fm_index_mib = fm_index_bytes / (1024.0 * 1024.0);
+
+    std::cerr << "[lz78] memory"
+              << " fm_index_bytes=" << fm_index_bytes
+              << " fm_index_mib=" << fm_index_mib
+              << " rss_kb=" << current_rss_kb()
+              << '\n';
+}
+
 int encode(
     const std::string& input_path,
     const std::string& output_path,
@@ -31,6 +43,7 @@ int encode(
         LinearDictionary dictionary;
         LZ78Factorizer factorizer(index, dictionary);
         factorizer.factorize_file(input_path, output_path);
+        print_memory_report(index);
         return 0;
     }
 
@@ -38,6 +51,7 @@ int encode(
         SegTreeDictionary dictionary(input_size);
         LZ78Factorizer factorizer(index, dictionary);
         factorizer.factorize_file(input_path, output_path);
+        print_memory_report(index);
         return 0;
     }
 
@@ -45,6 +59,7 @@ int encode(
         HashDictionary dictionary(input_size);
         LZ78Factorizer factorizer(index, dictionary);
         factorizer.factorize_file(input_path, output_path);
+        print_memory_report(index);
         return 0;
     }
 
