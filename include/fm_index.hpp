@@ -28,12 +28,12 @@ private:
 
     public:
         explicit ScopedByteSaAlgorithm(sdsl::byte_sa_algo_type algorithm)
-            : previous_(sdsl::construct_config::byte_algo_sa) {
-            sdsl::construct_config::byte_algo_sa = algorithm;
+            : previous_(sdsl::construct_config().byte_algo_sa) {
+            sdsl::construct_config().byte_algo_sa = algorithm;
         }
 
         ~ScopedByteSaAlgorithm() {
-            sdsl::construct_config::byte_algo_sa = previous_;
+            sdsl::construct_config().byte_algo_sa = previous_;
         }
     };
 

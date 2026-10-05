@@ -1,16 +1,11 @@
 CXX := /usr/bin/c++
 
-INC_DIR := /home/arthur/include
-LIB_DIR := /home/arthur/lib
+INC_DIR := sdsl-lite/include
 
 CXXFLAGS := -std=c++17 -Wall -Wextra -O3 \
             -ffast-math -funroll-loops -msse4.2 -march=native \
             -DHAVE_CXA_DEMANGLE \
             -Iinclude -I$(INC_DIR)
-
-LDFLAGS := -L$(LIB_DIR)
-
-LDLIBS := -lsdsl -ldivsufsort -ldivsufsort64
 
 SOURCES := $(wildcard src/*.cpp)
 OBJECTS := $(SOURCES:.cpp=.o)
