@@ -3,21 +3,45 @@
 #include <lz78_dictionary.hpp>
 
 #include <cstdint>
-#include <map>
+#include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 class HashDictionary : public LZ78Dictionary {
 private:
     static constexpr uint64_t NONE = 0;
 
-    struct Entry {
-        uint64_t ep;
-        uint64_t id;
+    using IntervalKey = std::pair<uint64_t, uint64_t>;
+    using LookupKey = std::pair<IntervalKey, uint64_t>;
+
+    struct PairHash {
+        static uint64_t mix(uint64_t value) noexcept {
+            value += 0x9e3779b97f4a7c15ULL;
+            value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+            return value ^ (value >> 31);
+        }
+
+        static std::size_t combine(uint64_t lhs, uint64_t rhs) noexcept {
+            const uint64_t lhs_hash = mix(lhs);
+            const uint64_t rhs_hash = mix(rhs);
+            return static_cast<std::size_t>(
+                lhs_hash ^ (rhs_hash + 0x9e3779b97f4a7c15ULL + (lhs_hash << 6) + (lhs_hash >> 2))
+            );
+        }
+
+        std::size_t operator()(const IntervalKey& key) const noexcept {
+            return combine(key.first, key.second);
+        }
+
+        std::size_t operator()(const LookupKey& key) const noexcept {
+            return combine((*this)(key.first), key.second);
+        }
     };
 
     uint64_t n;
-    std::unordered_map<uint64_t, std::map<uint64_t, Entry>> intervals_by_length;
+    std::unordered_map<LookupKey, uint64_t, PairHash> entries_by_interval_and_length;
 
 public:
     explicit HashDictionary(const std::string& text)
@@ -31,23 +55,9 @@ public:
             return NONE;
         }
 
-        auto length_it = intervals_by_length.find(length);
-        if (length_it == intervals_by_length.end()) {
-            return NONE;
-        }
-
-        const auto& intervals = length_it->second;
-        auto it = intervals.upper_bound(interval.sp);
-        if (it == intervals.begin()) {
-            return NONE;
-        }
-
-        --it;
-        if (it->second.ep >= interval.ep) {
-            return it->second.id;
-        }
-
-        return NONE;
+        const LookupKey key{{interval.sp, interval.ep}, length};
+        auto it = entries_by_interval_and_length.find(key);
+        return it == entries_by_interval_and_length.end() ? NONE : it->second;
     }
 
     bool interval_insert(Interval interval, Factor factor) override {
@@ -59,10 +69,7 @@ public:
             interval.ep = n - 1;
         }
 
-        intervals_by_length[factor.length][interval.sp] = Entry{
-            interval.ep,
-            factor.id
-        };
+        entries_by_interval_and_length[{{interval.sp, interval.ep}, factor.length}] = factor.id;
 
         return true;
     }
