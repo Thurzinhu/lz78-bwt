@@ -73,4 +73,8 @@ public:
 
         return true;
     }
+
+    int getNumberFactors(){
+        return entries_by_interval_and_length.size();
+    }
 };

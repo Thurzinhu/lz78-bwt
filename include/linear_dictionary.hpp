@@ -23,4 +23,8 @@ public:
         intervals.emplace_back(interval, factor);
         return true;
     }
+
+    int getNumberFactors(){
+        return intervals.size();
+    }
 };

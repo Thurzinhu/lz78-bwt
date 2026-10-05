@@ -63,6 +63,8 @@ private:
             emit(factor);
             ++next_id;
         }
+
+        std::cout << "TOTAL factors on dict " << dictionary.getNumberFactors() << '\n';
     }
 
 public:
