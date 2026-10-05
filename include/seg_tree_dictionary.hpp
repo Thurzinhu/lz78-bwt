@@ -167,4 +167,8 @@ public:
 
         return true;
     }
+
+    int getNumberFactors(){
+        return n;
+    }
 };
