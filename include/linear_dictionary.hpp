@@ -24,7 +24,7 @@ public:
         return true;
     }
 
-    int getNumberFactors(){
+    uint64_t number_of_dictionary_entries(){
         return intervals.size();
     }
 };

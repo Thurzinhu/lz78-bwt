@@ -130,7 +130,11 @@ public:
         return true;
     }
 
-    int getNumberFactors(){
-        return n;
+    uint64_t number_of_dictionary_entries(){
+        uint64_t total = 0;
+        for (const auto &[_, tree] : trees_by_length){
+            total += tree.number_of_entries();
+        }
+        return total;
     }
 };

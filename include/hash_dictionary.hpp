@@ -74,7 +74,7 @@ public:
         return true;
     }
 
-    int getNumberFactors(){
+    uint64_t number_of_dictionary_entries(){
         return entries_by_interval_and_length.size();
     }
 };
