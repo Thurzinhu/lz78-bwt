@@ -71,8 +71,7 @@ public:
 
         sdsl::cache_config config(
             false,
-            //std::filesystem::temp_directory_path().string(),
-            "/home/arthur/TCC/sdsl-lz78/output/sdsl-structures",
+            std::filesystem::temp_directory_path().string(),
             cache_id
         );
 

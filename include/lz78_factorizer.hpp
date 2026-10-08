@@ -26,7 +26,8 @@ private:
         uint64_t k = 0;
         uint64_t next_id = 1;
         uint64_t processed = 0;
-        uint64_t next_progress = 10'000'000;
+        uint64_t progress_step = 10'000'000;
+        uint64_t next_progress = progress_step;
 
         while (k < text.size()) {
             uint64_t length = 1;
@@ -48,7 +49,7 @@ private:
                         "factorize processed=" + std::to_string(processed) +
                         " factors=" + std::to_string(next_id)
                     );
-                    next_progress += 10'000'000;
+                    next_progress += progress_step;
                 }
 
                 if (existing_id == 0 || k >= text.size()) {
@@ -64,7 +65,11 @@ private:
             ++next_id;
         }
 
-        std::cout << "TOTAL factors on dict " << dictionary.getNumberFactors() << '\n';
+        log_lz78_progress(
+            "factorize processed=" + std::to_string(processed) +
+            " factors=" + std::to_string(next_id)
+        );
+        std::cout << "# of entries on the dict " << dictionary.number_of_dictionary_entries() << '\n';
     }
 
 public:
@@ -79,7 +84,7 @@ public:
             throw std::invalid_argument("input containing '$' is not supported");
         }
 
-        index.build(S);
+        index.build(get_reversed(S));
         factors.clear();
         factorize_text(S, [this](const Factor& factor) {
             factors.push_back(factor);
@@ -94,7 +99,11 @@ public:
             throw std::invalid_argument("input file is empty");
         }
 
-        index.build_from_file(input_path);
+        std::string reversed_file_path = TemporaryFile().string();
+
+        create_reversed_file(input_path, reversed_file_path);
+
+        index.build_from_file(reversed_file_path);
 
         DiskText text(input_path);
         FactorWriter writer(output_factors_path);
