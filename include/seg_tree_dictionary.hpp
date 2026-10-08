@@ -174,7 +174,7 @@ public:
 
     uint64_t number_of_dictionary_entries(){
         uint64_t total = 0;
-        for (const auto [_, tree] : trees_by_length){
+        for (const auto &[_, tree] : trees_by_length){
             total += tree.get_nodes_size();
         }
         return total;

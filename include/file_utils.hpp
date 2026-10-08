@@ -89,47 +89,38 @@ inline void create_reversed_file(
 
     constexpr uint64_t block_size = 1 << 20;
     uint64_t remaining = file_size(input_path);
-    // std::vector<char> buffer;
-    char buffer;
-    while (in.get(buffer)) {
-        if (static_cast<unsigned char>(buffer) == static_cast<unsigned char>('$')) {
-            throw std::invalid_argument("input containing '$' is not supported");
+    std::vector<char> buffer;
+
+    while (remaining > 0) {
+        const uint64_t to_read = std::min(block_size, remaining);
+        remaining -= to_read;
+
+        buffer.resize(static_cast<std::size_t>(to_read));
+
+        in.clear();
+        in.seekg(static_cast<std::streamoff>(remaining), std::ios::beg);
+        if (!in) {
+            throw std::runtime_error("failed to seek input file: " + input_path);
         }
-        out.put(buffer);
+
+        in.read(buffer.data(), static_cast<std::streamsize>(to_read));
+        if (in.gcount() != static_cast<std::streamsize>(to_read)) {
+            throw std::runtime_error("failed to read input file: " + input_path);
+        }
+
+        for (char c : buffer) {
+            if (static_cast<unsigned char>(c) == static_cast<unsigned char>('$')) {
+                throw std::invalid_argument("input containing '$' is not supported");
+            }
+        }
+
+        std::reverse(buffer.begin(), buffer.end());
+
+        out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         if (!out) {
-            throw std::runtime_error("failed to write text file: " + output_path);
+            throw std::runtime_error("failed to write reversed file: " + output_path);
         }
     }
-
-    // while (remaining > 0) {
-    //     const uint64_t to_read = std::min(block_size, remaining);
-    //     remaining -= to_read;
-
-    //     buffer.resize(static_cast<std::size_t>(to_read));
-
-    //     in.read(buffer.data(), static_cast<std::streamsize>(to_read));
-    //     if (in.gcount() != static_cast<std::streamsize>(to_read)) {
-    //         throw std::runtime_error("failed to read input file: " + input_path);
-    //     }
-
-    //     for (char c : buffer) {
-    //         if (static_cast<unsigned char>(c) == static_cast<unsigned char>('$')) {
-    //             throw std::invalid_argument("input containing '$' is not supported");
-    //         }
-    //     }
-
-    //     // std::reverse(buffer.begin(), buffer.end());
-    //     out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    //     if (!out) {
-    //         throw std::runtime_error("failed to write reversed file: " + output_path);
-    //     }
-
-    //     in.clear();
-    //     in.seekg(static_cast<std::streamoff>(to_read), std::ios::beg);
-    //     if (!in) {
-    //         throw std::runtime_error("failed to seek input file: " + input_path);
-    //     }
-    // }
 }
 
 class DiskText {
