@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 struct Interval {
@@ -23,5 +24,8 @@ public:
     virtual uint64_t size() const = 0;
     virtual void build(const std::string& text) = 0;
     virtual void build_from_file(const std::string& file_path) = 0;
+    virtual const char* name() const = 0;
+    virtual uint64_t size_in_bytes() const = 0;
+    virtual std::optional<uint64_t> number_of_runs() const { return std::nullopt; }
     virtual ~BWTIndex() = default;
 };

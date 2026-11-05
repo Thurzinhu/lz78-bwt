@@ -38,6 +38,13 @@ public:
             throw std::runtime_error("failed to write factor symbol");
         }
     }
+
+    void close() {
+        out_.close();
+        if (!out_) {
+            throw std::runtime_error("failed to close factor file");
+        }
+    }
 };
 
 class FactorReader {

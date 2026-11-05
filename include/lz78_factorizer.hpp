@@ -99,7 +99,8 @@ public:
             throw std::invalid_argument("input file is empty");
         }
 
-        std::string reversed_file_path = TemporaryFile().string();
+        TemporaryFile reversed_file;
+        const std::string reversed_file_path = reversed_file.string();
 
         create_reversed_file(input_path, reversed_file_path);
 
@@ -112,6 +113,7 @@ public:
         factorize_text(text, [&writer](const Factor& factor) {
             writer.write(factor);
         });
+        writer.close();
         log_lz78_progress("factorize end");
     }
 

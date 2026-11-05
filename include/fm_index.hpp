@@ -98,7 +98,9 @@ public:
         return csa.size();
     }
 
-    uint64_t size_in_bytes() const {
+    const char* name() const override { return "fm"; }
+
+    uint64_t size_in_bytes() const override {
         return sdsl::size_in_bytes(csa);
     }
 };
