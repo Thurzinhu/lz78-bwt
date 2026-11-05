@@ -1,8 +1,8 @@
 #pragma once
 
-#include <index_interface.hpp>
-#include <progress.hpp>
-#include "../external/r-index/internal/r_index_count.hpp"
+#include <indexes/index_interface.hpp>
+#include <utils/progress.hpp>
+#include "../../external/r-index/internal/r_index_count.hpp"
 
 #include <fstream>
 #include <iterator>

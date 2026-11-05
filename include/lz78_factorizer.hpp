@@ -1,11 +1,11 @@
 #pragma once
 
-#include <index_interface.hpp>
-#include <lz78_dictionary.hpp>
+#include <indexes/index_interface.hpp>
+#include <dictionaries/lz78_dictionary.hpp>
 #include <factor.hpp>
 #include <factor_io.hpp>
-#include <file_utils.hpp>
-#include <progress.hpp>
+#include <utils/file_utils.hpp>
+#include <utils/progress.hpp>
 
 #include <algorithm>
 #include <chrono>

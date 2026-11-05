@@ -1,12 +1,12 @@
-#include <fm_index.hpp>
-#include <r_index.hpp>
-#include <file_utils.hpp>
-#include <linear_dictionary.hpp>
+#include <indexes/fm_index.hpp>
+#include <indexes/r_index.hpp>
+#include <utils/file_utils.hpp>
+#include <dictionaries/linear_dictionary.hpp>
 #include <lz78_decoder.hpp>
 #include <lz78_factorizer.hpp>
-#include <progress.hpp>
-#include <seg_tree_dictionary.hpp>
-#include <hash_dictionary.hpp>
+#include <utils/progress.hpp>
+#include <dictionaries/seg_tree_dictionary.hpp>
+#include <dictionaries/hash_dictionary.hpp>
 
 #include <exception>
 #include <iostream>

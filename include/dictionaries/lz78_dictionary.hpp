@@ -1,7 +1,7 @@
 #pragma once
 
 #include <factor.hpp>
-#include <index_interface.hpp>
+#include <indexes/index_interface.hpp>
 
 #include <cstdint>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lz78_dictionary.hpp>
+#include <dictionaries/lz78_dictionary.hpp>
 
 #include <cstdint>
 #include <cstddef>

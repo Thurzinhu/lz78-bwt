@@ -1,8 +1,8 @@
 #pragma once
 
-#include <file_utils.hpp>
-#include <index_interface.hpp>
-#include <progress.hpp>
+#include <utils/file_utils.hpp>
+#include <indexes/index_interface.hpp>
+#include <utils/progress.hpp>
 
 #include <sdsl/construct_config.hpp>
 #include <sdsl/io.hpp>

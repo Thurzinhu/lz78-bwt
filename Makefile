@@ -9,7 +9,7 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -O3 \
 
 SOURCES := $(wildcard src/*.cpp)
 OBJECTS := $(SOURCES:.cpp=.o)
-HEADERS := $(wildcard include/*.hpp) $(wildcard external/r-index/internal/*.hpp)
+HEADERS := $(shell find include -type f -name '*.hpp') $(wildcard external/r-index/internal/*.hpp)
 TEST_SOURCES := $(wildcard tests/*.cpp)
 TEST_TARGETS := $(TEST_SOURCES:.cpp=.x)
 
