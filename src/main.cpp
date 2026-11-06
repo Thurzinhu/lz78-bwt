@@ -9,6 +9,7 @@
 #include <dictionaries/hash_dictionary.hpp>
 
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -18,7 +19,7 @@ namespace {
 void print_usage(const char* program) {
     std::cerr
         << "Usage:\n"
-        << "  " << program << " encode <input_text_file> <output_factors_file> <linear|segtree|hash> [--index <fm|rindex>]\n"
+        << "  " << program << " encode <input_text_file> <output_factors_file> <linear|segtree|hash> [--index <fm|rindex>] [--metrics <json_file>]\n"
         << "  " << program << " decode <input_factors_file> <output_text_file>\n";
 }
 
@@ -26,6 +27,7 @@ int encode(
     const std::string& input_path,
     const std::string& output_path,
     const std::string& dictionary_name,
+    const std::string& metrics_path,
     const std::string& index_name
 ) {
     const auto input_file = std::filesystem::weakly_canonical(input_path);
@@ -34,14 +36,40 @@ int encode(
         (std::filesystem::exists(output_path) && std::filesystem::equivalent(input_path, output_path))) {
         throw std::invalid_argument("input and output paths must be different");
     }
+    if (!metrics_path.empty()) {
+        const auto metrics_file = std::filesystem::weakly_canonical(metrics_path);
+        if (metrics_file == input_file || metrics_file == output_file ||
+            (std::filesystem::exists(metrics_path) &&
+                (std::filesystem::equivalent(input_path, metrics_path) ||
+                 (std::filesystem::exists(output_path) && std::filesystem::equivalent(output_path, metrics_path))))) {
+            throw std::invalid_argument("metrics, input and output paths must be different");
+        }
+    }
+    std::ofstream metrics_out;
+    if (!metrics_path.empty()) {
+        metrics_out.open(metrics_path, std::ios::trunc);
+        if (!metrics_out) throw std::runtime_error("failed to open metrics file: " + metrics_path);
+    }
+
     std::unique_ptr<BWTIndex> index;
     if (index_name == "fm") index = std::make_unique<FMIndex>();
     else if (index_name == "rindex") index = std::make_unique<RIndex>();
     else throw std::invalid_argument("index must be 'fm' or 'rindex'");
+
     const uint64_t input_size = file_size(input_path);
+    RunMetrics metrics;
     auto run = [&](LZ78Dictionary& dictionary) {
-        LZ78Factorizer factorizer(*index, dictionary);
+        LZ78Factorizer factorizer(*index, dictionary, metrics_path.empty() ? nullptr : &metrics);
         factorizer.factorize_file(input_path, output_path);
+        const uint64_t index_bytes = index->size_in_bytes();
+        print_memory_report(*index, index_bytes, dictionary, factorizer.factor_count());
+
+        if (!metrics_path.empty()) {
+            write_metrics_json(metrics_out, metrics, input_path, output_path, dictionary_name,
+                input_size, file_size(output_path), factorizer.factor_count(), *index, dictionary);
+            metrics_out.close();
+            if (!metrics_out) throw std::runtime_error("failed to write metrics file: " + metrics_path);
+        }
         return 0;
     };
 
@@ -80,8 +108,8 @@ int main(int argc, char** argv) {
                 return 1;
             }
 
-            std::string index_name = "fm";
-            bool seen_index = false;
+            std::string index_name = "fm", metrics_path;
+            bool seen_index = false, seen_metrics = false;
             for (int i = 5; i < argc; i += 2) {
                 const std::string option = argv[i], value = argv[i + 1];
                 if (value.empty() || value.rfind("--", 0) == 0) {
@@ -93,11 +121,14 @@ int main(int argc, char** argv) {
                     if (index_name != "fm" && index_name != "rindex") {
                         throw std::invalid_argument("index must be 'fm' or 'rindex'");
                     }
+                } else if (option == "--metrics" && !seen_metrics) {
+                    seen_metrics = true;
+                    metrics_path = value;
                 } else {
                     throw std::invalid_argument("unknown or duplicate option: " + option);
                 }
             }
-            return encode(argv[2], argv[3], argv[4], index_name);
+            return encode(argv[2], argv[3], argv[4], metrics_path, index_name);
         }
 
         if (mode == "decode") {

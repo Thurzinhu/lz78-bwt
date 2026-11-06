@@ -29,6 +29,22 @@ inline uint64_t current_rss_kb() {
     return 0;
 }
 
+// This is the cumulative process high-water mark, not a per-phase peak.
+inline uint64_t peak_rss_kb() {
+    std::ifstream status("/proc/self/status");
+    std::string key;
+    while (status >> key) {
+        if (key == "VmHWM:") {
+            uint64_t value = 0;
+            status >> value;
+            return value;
+        }
+        std::string rest;
+        std::getline(status, rest);
+    }
+    return 0;
+}
+
 inline void log_lz78_progress(const std::string& message) {
     if (!lz78_progress_enabled()) {
         return;

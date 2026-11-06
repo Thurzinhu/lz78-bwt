@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dictionaries/lz78_dictionary.hpp>
+#include <utils/counting_allocator.hpp>
 
 #include <cstdint>
 #include <cstddef>
@@ -41,7 +42,12 @@ private:
     };
 
     uint64_t n;
-    std::unordered_map<LookupKey, uint64_t, PairHash> entries_by_interval_and_length;
+    using Entry = std::pair<const LookupKey, uint64_t>;
+    std::shared_ptr<AllocationStats> allocations_ = std::make_shared<AllocationStats>();
+    std::unordered_map<LookupKey, uint64_t, PairHash,
+        std::equal_to<LookupKey>, CountingAllocator<Entry>> entries_by_interval_and_length{
+            CountingAllocator<Entry>(allocations_)
+        };
 
 public:
     explicit HashDictionary(const std::string& text)
@@ -49,6 +55,20 @@ public:
 
     explicit HashDictionary(uint64_t text_size)
         : n(text_size + 1) {}
+
+    HashDictionary(const HashDictionary& other)
+        : n(other.n),
+          entries_by_interval_and_length(other.entries_by_interval_and_length,
+              CountingAllocator<Entry>(allocations_)) {}
+
+    HashDictionary& operator=(const HashDictionary& other) {
+        if (this != &other) {
+            n = other.n;
+            // The map retains this dictionary's nonpropagating allocator.
+            entries_by_interval_and_length = other.entries_by_interval_and_length;
+        }
+        return *this;
+    }
 
     uint64_t interval_search(Interval interval, uint64_t length) const override {
         if (interval.empty() || interval.sp >= n) {
@@ -76,5 +96,15 @@ public:
 
     uint64_t number_of_dictionary_entries(){
         return entries_by_interval_and_length.size();
+    }
+
+    std::optional<DictionaryMemoryStats> memory_stats() const override {
+        return DictionaryMemoryStats{
+            allocations_->allocated_bytes,
+            allocations_->peak_allocated_bytes,
+            entries_by_interval_and_length.bucket_count(),
+            entries_by_interval_and_length.load_factor(),
+            entries_by_interval_and_length.max_load_factor()
+        };
     }
 };
