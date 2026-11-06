@@ -5,16 +5,18 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
 class HashDictionary : public LZ78Dictionary {
 private:
-    static constexpr uint64_t NONE = 0;
+    static constexpr uint32_t NONE = 0;
 
-    using IntervalKey = std::pair<uint64_t, uint64_t>;
-    using LookupKey = std::pair<IntervalKey, uint64_t>;
+    using IntervalKey = std::pair<uint32_t, uint32_t>;
+    using LookupKey = std::pair<IntervalKey, uint32_t>;
 
     struct PairHash {
         static uint64_t mix(uint64_t value) noexcept {
@@ -41,20 +43,37 @@ private:
         }
     };
 
+    static uint32_t checked_value(uint64_t value, const char* field) {
+        if (value > std::numeric_limits<uint32_t>::max()) {
+            throw std::overflow_error(
+                std::string("HashDictionary: ") + field +
+                " exceeds the 32-bit limit (4294967295)"
+            );
+        }
+        return static_cast<uint32_t>(value);
+    }
+
+    static LookupKey checked_key(Interval interval, uint64_t length) {
+        return {{checked_value(interval.sp, "interval.sp"),
+                 checked_value(interval.ep, "interval.ep")},
+                checked_value(length, "factor length")};
+    }
+
+    // Includes the terminator: UINT32_MAX text bytes need 2^32 index positions.
     uint64_t n;
-    using Entry = std::pair<const LookupKey, uint64_t>;
+    using Entry = std::pair<const LookupKey, uint32_t>;
     std::shared_ptr<AllocationStats> allocations_ = std::make_shared<AllocationStats>();
-    std::unordered_map<LookupKey, uint64_t, PairHash,
+    std::unordered_map<LookupKey, uint32_t, PairHash,
         std::equal_to<LookupKey>, CountingAllocator<Entry>> entries_by_interval_and_length{
             CountingAllocator<Entry>(allocations_)
         };
 
 public:
     explicit HashDictionary(const std::string& text)
-        : n(text.size() + 1) {}
+        : HashDictionary(text.size()) {}
 
     explicit HashDictionary(uint64_t text_size)
-        : n(text_size + 1) {}
+        : n(uint64_t{checked_value(text_size, "text size")} + 1) {}
 
     HashDictionary(const HashDictionary& other)
         : n(other.n),
@@ -71,25 +90,35 @@ public:
     }
 
     uint64_t interval_search(Interval interval, uint64_t length) const override {
-        if (interval.empty() || interval.sp >= n) {
+        if (interval.empty()) {
             return NONE;
         }
 
-        const LookupKey key{{interval.sp, interval.ep}, length};
+        const LookupKey key = checked_key(interval, length);
+        if (interval.sp >= n) {
+            return NONE;
+        }
+
         auto it = entries_by_interval_and_length.find(key);
         return it == entries_by_interval_and_length.end() ? NONE : it->second;
     }
 
     bool interval_insert(Interval interval, Factor factor) override {
-        if (interval.empty() || interval.sp >= n) {
+        if (interval.empty()) {
+            return false;
+        }
+
+        LookupKey key = checked_key(interval, factor.length);
+        const uint32_t id = checked_value(factor.id, "factor id");
+        if (interval.sp >= n) {
             return false;
         }
 
         if (interval.ep >= n) {
-            interval.ep = n - 1;
+            key.first.second = static_cast<uint32_t>(n - 1);
         }
 
-        entries_by_interval_and_length[{{interval.sp, interval.ep}, factor.length}] = factor.id;
+        entries_by_interval_and_length[key] = id;
 
         return true;
     }
