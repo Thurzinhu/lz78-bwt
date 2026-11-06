@@ -162,8 +162,6 @@ class Runner:
         self.previous_handlers = {}
         self.console_enabled = True
         self.terminal_fd = None
-        self.progress_line = ""
-        self.progress_time = 0
         self.state = {"schema_version": 1, "pid": os.getpid(), "status": "running",
                       "completed_files": 0, "started_utc": datetime.now(timezone.utc).isoformat()}
 
@@ -230,14 +228,6 @@ class Runner:
         self.state["updated_utc"] = datetime.now(timezone.utc).isoformat()
         write_json(self.batch / "run_state.json", self.state)
 
-    def progress(self, stderr_path, started):
-        now = time.monotonic()
-        line = last_log_line(stderr_path) if stderr_path else ""
-        if line != self.progress_line or now - self.progress_time >= 10:
-            self.progress_line, self.progress_time = line, now
-            self.update(progress=line, elapsed_seconds=now - started)
-            self.emit(f"  {self.state.get('current_file', 'build')}: {now - started:.1f}s {line}")
-
     def fail(self, error):
         diagnostic = f"{type(error).__name__}: {error}"
         try:
@@ -251,7 +241,7 @@ class Runner:
             pass
 
 
-def wait_for_process(process, timeout, runner=None, stderr_path=None):
+def wait_for_process(process, timeout, runner=None):
     started = time.monotonic()
     deadline = started + timeout if timeout is not None else None
     while True:
@@ -265,8 +255,6 @@ def wait_for_process(process, timeout, runner=None, stderr_path=None):
         if remaining is not None and remaining <= 0:
             stop_process(process)
             return process.returncode, "timeout"
-        if runner:
-            runner.progress(stderr_path, started)
         try:
             return process.wait(timeout=min(0.2, remaining) if remaining is not None else 0.2), None
         except subprocess.TimeoutExpired:
@@ -397,7 +385,8 @@ def measure_file(binary, source, output, detail, timeout, runner=None, index="fm
             command = ["/usr/bin/time", "-v", "-o", str(detail / "time.txt"), str(binary),
                        "encode", str(source), str(output), "hash", *index_args,
                        "--metrics", str(detail / "metrics.json")]
-            environment = dict(os.environ, LC_ALL="C", LZ78_PROGRESS="1", TMPDIR=temporary.name)
+            # Keep metrics collection, but disable progress logging during benchmarks.
+            environment = dict(os.environ, LC_ALL="C", LZ78_PROGRESS="0", TMPDIR=temporary.name)
             write_json(detail / "command.json", {"argv": command, "environment": {
                 key: environment[key] for key in ("LC_ALL", "LZ78_PROGRESS", "TMPDIR")}})
             if runner and runner.signum:
@@ -409,7 +398,7 @@ def measure_file(binary, source, output, detail, timeout, runner=None, index="fm
                     if runner:
                         runner.process = process
                         runner.update(stage="encode", process_group_id=process.pid)
-                    row["exit_code"], status = wait_for_process(process, timeout, runner, detail / "stderr.log")
+                    row["exit_code"], status = wait_for_process(process, timeout, runner)
                     if status:
                         row.update(status=status, error=signal.Signals(runner.signum).name
                                    if status == "interrupted" and runner else status)
@@ -496,7 +485,7 @@ def run():
                     runner.process = built
                     try:
                         runner.update(stage="build", process_group_id=built.pid)
-                        code, status = wait_for_process(built, None, runner, batch / "build.log")
+                        code, status = wait_for_process(built, None, runner)
                     finally:
                         stop_process(built)
                         runner.process = None
@@ -528,8 +517,7 @@ def run():
                 detail = batch / f"{number:04d}"
                 detail.mkdir()
                 runner.update(stage="prepare", current_file=source.name, current_index=index, report_directory=detail.name,
-                              process_group_id=None, progress="")
-                runner.progress_line, runner.progress_time = "", 0
+                              process_group_id=None)
                 runner.emit(f"[{number}/{len(attempts)}] {source.name} ({index})")
                 output_directory = output_batch / index if len(args.indexes) > 1 else output_batch
                 row = measure_file(binary, source, output_directory / (source.name + ".bin"),
