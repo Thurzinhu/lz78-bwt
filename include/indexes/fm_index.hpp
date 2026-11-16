@@ -70,7 +70,7 @@ public:
         );
 
         sdsl::cache_config config(
-            false,
+            true,
             std::filesystem::temp_directory_path().string(),
             cache_id
         );

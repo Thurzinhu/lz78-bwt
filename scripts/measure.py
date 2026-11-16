@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare FM/r-index hash encoders sequentially and summarize measured resources."""
+"""Compare FM/r-index encoders with hash/segtree dictionaries and summarize resources."""
 
 import argparse
 from contextlib import contextmanager
@@ -19,7 +19,7 @@ import traceback
 
 
 REPO = Path(__file__).resolve().parents[1]
-FIELDS = ["file", "index", "status", "exit_code", "input_bytes", "factor_count", "dictionary_entries",
+FIELDS = ["file", "index", "dictionary", "status", "exit_code", "input_bytes", "factor_count", "dictionary_entries",
           "index_serialized_bytes", "index_hash_estimated_bytes", "bwt_runs",
           "fm_serialized_bytes", "hash_allocated_bytes", "hash_peak_allocated_bytes",
           "fm_hash_estimated_bytes", "hash_buckets", "hash_load_factor", "rss_final_kib",
@@ -87,9 +87,9 @@ def markdown_cell(value):
 
 def write_summary(batch, rows):
     write_csv(batch / "comparativo.csv", rows, FIELDS)
-    columns = [("Arquivo", "file", 1), ("Índice", "index", 1), ("Status", "status", 1),
+    columns = [("Arquivo", "file", 1), ("Índice", "index", 1), ("Dicionário", "dictionary", 1), ("Status", "status", 1),
                ("Entrada MiB", "input_bytes", 1048576), ("Fatores", "factor_count", 1),
-               ("Entradas hash", "dictionary_entries", 1),
+               ("Entradas dicionário", "dictionary_entries", 1),
                ("Índice serializado MiB", "index_serialized_bytes", 1048576),
                ("Runs BWT", "bwt_runs", 1),
                ("Hash alocada MiB", "hash_allocated_bytes", 1048576),
@@ -101,7 +101,8 @@ def write_summary(batch, rows):
     with atomic_text(batch / "comparativo.md") as stream:
         stream.write("# Medições do encoder atual\n\n")
         stream.write("Índice + hash é uma estimativa: índice serializado + alocações solicitadas pela hash. "
-                     "Não representa RSS. Pico hash inclui alocações temporárias de rehash.\n\n")
+                     "Não representa RSS. Pico hash inclui alocações temporárias de rehash. "
+                     "Para segtree, os campos de hash ficam vazios; o pico RSS mede o processo completo.\n\n")
         stream.write("| " + " | ".join(title for title, _, _ in columns) + " |\n")
         stream.write("| " + " | ".join("---" for _ in columns) + " |\n")
         for row in rows:
@@ -175,7 +176,11 @@ class Runner:
                                            os.O_WRONLY | os.O_NONBLOCK | os.O_NOCTTY)
             except OSError:
                 self.console_enabled = False
-        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        # Survive SSH/terminal hangups, including when launched with nohup.
+        # Child encoders inherit SIG_IGN; explicit INT/TERM still stop the batch.
+        self.previous_handlers[signal.SIGHUP] = signal.getsignal(signal.SIGHUP)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        for signum in (signal.SIGINT, signal.SIGTERM):
             self.previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, self.request_stop)
         return self
@@ -241,8 +246,11 @@ class Runner:
             pass
 
 
-def wait_for_process(process, timeout, runner=None):
+def wait_for_process(process, timeout, runner=None, stderr_path=None):
+    # Retain the legacy log argument for external runners such as tudocomp.
+    # Live progress no longer reads this file.
     started = time.monotonic()
+    next_notice = started + 60
     deadline = started + timeout if timeout is not None else None
     while True:
         code = process.poll()
@@ -251,10 +259,15 @@ def wait_for_process(process, timeout, runner=None):
         if runner and runner.signum:
             stop_process(process)
             return process.returncode, "interrupted"
-        remaining = deadline - time.monotonic() if deadline is not None else None
+        now = time.monotonic()
+        remaining = deadline - now if deadline is not None else None
         if remaining is not None and remaining <= 0:
             stop_process(process)
             return process.returncode, "timeout"
+        if runner and now >= next_notice:
+            label = runner.state.get("current_file") or "build"
+            runner.emit(f"  {label}: em execução há {now - started:.0f}s")
+            next_notice = now + 60
         try:
             return process.wait(timeout=min(0.2, remaining) if remaining is not None else 0.2), None
         except subprocess.TimeoutExpired:
@@ -316,8 +329,13 @@ def validate_metrics(metrics, input_size, output_size):
     names = [phase["name"] for phase in metrics["phases"]]
     if sorted(names) != [f"build_{index}_index", "factorize", "reverse_input"]:
         raise ValueError("invalid phases")
+    if metrics.get("dictionary") == "segtree":
+        for record in [metrics, *metrics["progress_samples"]]:
+            if any(value is not None for key, value in record.items()
+                   if key.startswith("hash_") or key in ("index_hash_estimated_bytes", "fm_hash_estimated_bytes")):
+                raise ValueError("segtree report must not claim hash memory")
     for key in FIELDS:
-        if key in metrics and key not in {"file", "index", "status", "error", "report_directory"}:
+        if key in metrics and key not in {"file", "index", "dictionary", "status", "error", "report_directory"}:
             if metrics[key] is not None and not valid_number(metrics[key]):
                 raise ValueError(f"invalid {key}")
 
@@ -339,6 +357,8 @@ def read_measurements(row, output, detail):
         index = metrics.get("index") if metrics["schema_version"] == 2 else "fm"
         if index != row.get("index", "fm"):
             raise ValueError("reported index does not match requested index")
+        if metrics.get("dictionary", "hash") != row.get("dictionary", "hash"):
+            raise ValueError("reported dictionary does not match requested dictionary")
         if metrics["schema_version"] == 1:
             metrics.update(index="fm", index_serialized_bytes=metrics["fm_serialized_bytes"],
                            index_hash_estimated_bytes=metrics.get("fm_hash_estimated_bytes"), bwt_runs=None)
@@ -372,8 +392,8 @@ def cleanup_temporary(temporary, row):
             row["cleanup_error"] = f"{type(error).__name__}: {error}"
 
 
-def measure_file(binary, source, output, detail, timeout, runner=None, index="fm"):
-    row = {"file": source.name, "index": index, "input_bytes": None, "exit_code": None,
+def measure_file(binary, source, output, detail, timeout, runner=None, index="fm", dictionary="hash"):
+    row = {"file": source.name, "index": index, "dictionary": dictionary, "input_bytes": None, "exit_code": None,
            "report_directory": detail.name, "status": "failed"}
     temporary, process, metrics = None, None, None
     try:
@@ -383,7 +403,7 @@ def measure_file(binary, source, output, detail, timeout, runner=None, index="fm
             temporary = tempfile.TemporaryDirectory(prefix="tmp-", dir=detail)
             index_args = [] if index == "fm" else ["--index", index]
             command = ["/usr/bin/time", "-v", "-o", str(detail / "time.txt"), str(binary),
-                       "encode", str(source), str(output), "hash", *index_args,
+                       "encode", str(source), str(output), dictionary, *index_args,
                        "--metrics", str(detail / "metrics.json")]
             # Keep metrics collection, but disable progress logging during benchmarks.
             environment = dict(os.environ, LC_ALL="C", LZ78_PROGRESS="0", TMPDIR=temporary.name)
@@ -446,15 +466,21 @@ def run():
     parser.add_argument("--input-dir", type=Path, default=REPO / "input")
     parser.add_argument("--output-dir", type=Path, default=REPO / "output")
     parser.add_argument("--reports-dir", type=Path, default=REPO / "reports")
-    parser.add_argument("--pattern", default="*", help="glob for files directly inside input-dir")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--pattern", help="glob for files directly inside input-dir")
+    selection.add_argument("--files", nargs="+", help="exact filenames inside input-dir, processed in the given order")
     parser.add_argument("--binary", type=Path, help="use an existing binary; skips automatic make")
     parser.add_argument("--timeout", type=float, help="maximum seconds per file")
     parser.add_argument("--indexes", nargs="+", choices=("fm", "rindex", "rlbwt"), default=["fm"],
                         help="indexes to measure sequentially for each file (default: fm)")
+    parser.add_argument("--dictionaries", nargs="+", choices=("hash", "segtree"), default=["hash"],
+                        help="dictionaries to measure sequentially for each file/index (default: hash)")
     args = parser.parse_args()
     args.indexes = ["rindex" if index == "rlbwt" else index for index in args.indexes]
     if len(set(args.indexes)) != len(args.indexes):
         parser.error("--indexes must not contain duplicates")
+    if len(set(args.dictionaries)) != len(args.dictionaries):
+        parser.error("--dictionaries must not contain duplicates")
     if args.timeout is not None and args.timeout <= 0:
         parser.error("--timeout must be positive")
     inputs = args.input_dir.resolve()
@@ -464,11 +490,24 @@ def run():
         parser.error(f"input directory does not exist: {inputs}")
     if len({inputs, outputs, reports}) != 3:
         parser.error("input, output and reports directories must be different")
-    sources = sorted(path for path in inputs.glob(args.pattern)
-                     if path.is_file() and path.parent == inputs)
+    if args.files is not None:
+        if len(set(args.files)) != len(args.files):
+            parser.error("--files must not contain duplicates")
+        sources = []
+        for name in args.files:
+            if Path(name).name != name or name in (".", ".."):
+                parser.error("--files accepts only filenames directly inside input-dir")
+            source = inputs / name
+            if not source.is_file():
+                parser.error(f"input file does not exist: {source}")
+            sources.append(source)
+    else:
+        sources = sorted(path for path in inputs.glob(args.pattern if args.pattern is not None else "*")
+                         if path.is_file() and path.parent == inputs)
     if not sources:
         parser.error("no input files matched")
-    attempts = [(source, index) for source in sources for index in args.indexes]
+    attempts = [(source, index, dictionary) for source in sources
+                for index in args.indexes for dictionary in args.dictionaries]
     if not Path("/usr/bin/time").is_file():
         parser.error("GNU Time is required at /usr/bin/time")
     binary = (args.binary or REPO / "main.x").resolve()
@@ -499,29 +538,33 @@ def run():
                 raise RuntimeError(f"encoder binary is not executable: {binary}")
             output_batch = outputs / batch.name
             output_batch.mkdir(parents=True, exist_ok=False)
-            if len(args.indexes) > 1:
-                for index in args.indexes:
-                    (output_batch / index).mkdir()
             manifest = {"schema_version": 1, "started_utc": datetime.now(timezone.utc).isoformat(),
                         "binary": str(binary), "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
                         "git_commit": git_value("rev-parse", "HEAD"),
                         "git_status": git_value("status", "--short"),
                         "platform": list(os.uname()),
                         "input_directory": str(inputs), "output_directory": str(output_batch),
-                        "files": [str(path) for path in sources], "indexes": args.indexes}
+                        "files": [str(path) for path in sources], "indexes": args.indexes,
+                        "dictionaries": args.dictionaries}
             write_json(batch / "run.json", manifest)
             rows = []
-            for number, (source, index) in enumerate(attempts, 1):
+            for number, (source, index, dictionary) in enumerate(attempts, 1):
                 if runner.signum:
                     break
                 detail = batch / f"{number:04d}"
                 detail.mkdir()
-                runner.update(stage="prepare", current_file=source.name, current_index=index, report_directory=detail.name,
+                runner.update(stage="prepare", current_file=source.name, current_index=index,
+                              current_dictionary=dictionary, report_directory=detail.name,
                               process_group_id=None)
-                runner.emit(f"[{number}/{len(attempts)}] {source.name} ({index})")
-                output_directory = output_batch / index if len(args.indexes) > 1 else output_batch
+                runner.emit(f"[{number}/{len(attempts)}] {source.name} ({index}, {dictionary})")
+                output_directory = output_batch
+                if len(args.dictionaries) > 1:
+                    output_directory /= dictionary
+                if len(args.indexes) > 1:
+                    output_directory /= index
+                output_directory.mkdir(parents=True, exist_ok=True)
                 row = measure_file(binary, source, output_directory / (source.name + ".bin"),
-                                   detail, args.timeout, runner, index=index)
+                                   detail, args.timeout, runner, index=index, dictionary=dictionary)
                 rows.append(row)
                 runner.update(stage="summary", completed_files=len(rows))
                 write_summary(batch, rows)
